@@ -5,6 +5,8 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Serilog;
+
 
 namespace TaskManager
 {
@@ -84,6 +86,31 @@ namespace TaskManager
             Console.WriteLine("Приложение завершено. Логи сохранены в файлы.");
             Console.WriteLine("Нажмите любую клавишу для выхода...");
             Console.ReadKey();
+
+            Log.Logger = new LoggerConfiguration()
+           .MinimumLevel.Debug()
+           .WriteTo.Console()
+           .WriteTo.File("logs/log-.txt",
+               rollingInterval: RollingInterval.Day,
+               outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+           .CreateLogger();
+
+            try
+            {
+                Log.Information("Приложение TaskManager запущено");
+
+                // Здесь будет ваш код
+
+                Log.Information("Приложение завершило работу");
+            }
+            catch (Exception ex)
+            {
+                Log.Fatal(ex, "Критическая ошибка в приложении");
+            }
+            finally
+            {
+                Log.CloseAndFlush();
+            }
         }
 
         static void SetupLogging()
