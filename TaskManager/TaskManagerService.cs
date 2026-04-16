@@ -23,24 +23,21 @@ namespace TaskManager
 
         public void AddTask(string title)
         {
-            // Используем централизованную обработку исключений
             ExceptionHandler.TryExecute(() =>
             {
                 var operationId = Guid.NewGuid().ToString().Substring(0, 8);
                 var stopwatch = Stopwatch.StartNew();
 
-                Trace.WriteLine($"[TRACE] === НАЧАЛО AddTask [{operationId}] ===");
+                Trace.TraceInformation($"=== НАЧАЛО AddTask [{operationId}] ===");
                 _logger.Debug("Начало операции AddTask. OperationId: {OperationId}, Title: {Title}", operationId, title);
 
                 traceSource.TraceEvent(TraceEventType.Start, 1001, $"Операция AddTask начата. ID: {operationId}");
 
-                // Валидация
                 if (string.IsNullOrWhiteSpace(title))
                 {
                     throw new ArgumentException("Название задачи не может быть пустым!", nameof(title));
                 }
 
-                // Основная логика
                 var task = new TaskModel(title);
                 tasks.Add(task);
 
@@ -53,7 +50,7 @@ namespace TaskManager
 
                 Console.WriteLine($"Задача \"{title}\" добавлена!");
 
-                Trace.WriteLine($"[TRACE] === КОНЕЦ AddTask [{operationId}] ===");
+                Trace.TraceInformation($"=== КОНЕЦ AddTask [{operationId}] ===");
 
             }, "AddTask", new { Title = title }, LogLevel.Error);
         }
@@ -65,7 +62,7 @@ namespace TaskManager
                 var operationId = Guid.NewGuid().ToString().Substring(0, 8);
                 var stopwatch = Stopwatch.StartNew();
 
-                Trace.WriteLine($"[TRACE] === НАЧАЛО RemoveTask [{operationId}] ===");
+                Trace.TraceInformation($"=== НАЧАЛО RemoveTask [{operationId}] ===");
                 _logger.Debug("Начало операции RemoveTask. OperationId: {OperationId}, Title: {Title}", operationId, title);
 
                 var taskToRemove = tasks.FirstOrDefault(t =>
@@ -73,6 +70,7 @@ namespace TaskManager
 
                 if (taskToRemove == null)
                 {
+                    Trace.TraceWarning($"Задача \"{title}\" не найдена!");
                     throw new KeyNotFoundException($"Задача \"{title}\" не найдена!");
                 }
 
@@ -84,9 +82,9 @@ namespace TaskManager
 
                 Console.WriteLine($"Задача \"{title}\" удалена!");
 
-                Trace.WriteLine($"[TRACE] === КОНЕЦ RemoveTask [{operationId}] ===");
+                Trace.TraceInformation($"=== КОНЕЦ RemoveTask [{operationId}] ===");
 
-            }, "RemoveTask", new { Title = title }, LogLevel.Warning); // Warning уровень для "не найдено"
+            }, "RemoveTask", new { Title = title }, LogLevel.Warning);
         }
 
         public void ListTasks()
@@ -96,13 +94,14 @@ namespace TaskManager
                 var operationId = Guid.NewGuid().ToString().Substring(0, 8);
                 var stopwatch = Stopwatch.StartNew();
 
-                Trace.WriteLine($"[TRACE] === НАЧАЛО ListTasks [{operationId}] ===");
+                Trace.TraceInformation($"=== НАЧАЛО ListTasks [{operationId}] ===");
                 _logger.Debug("Начало операции ListTasks. OperationId: {OperationId}", operationId);
 
                 if (!tasks.Any())
                 {
                     Console.WriteLine("Список задач пуст!");
                     _logger.Information("Список задач пуст");
+                    Trace.TraceInformation("Список задач пуст");
                     return;
                 }
 
@@ -116,7 +115,7 @@ namespace TaskManager
                 stopwatch.Stop();
                 _logger.Information("Выведен список из {Count} задач, Время: {ElapsedMs}ms", tasks.Count, stopwatch.ElapsedMilliseconds);
 
-                Trace.WriteLine($"[TRACE] === КОНЕЦ ListTasks [{operationId}] ===");
+                Trace.TraceInformation($"=== КОНЕЦ ListTasks [{operationId}] ===");
 
             }, "ListTasks", null, LogLevel.Error);
         }

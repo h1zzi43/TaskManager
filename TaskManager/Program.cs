@@ -1,5 +1,5 @@
 ﻿using Serilog;
-using Serilog.Formatting.Json; // Добавляем этот using
+using Serilog.Formatting.Json;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -15,7 +15,6 @@ namespace TaskManager
 
         static void Main(string[] args)
         {
-            // === ГЛОБАЛЬНЫЙ ОБРАБОТЧИК НЕОБРАБОТАННЫХ ИСКЛЮЧЕНИЙ ===
             AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
             {
                 var ex = e.ExceptionObject as Exception;
@@ -30,12 +29,10 @@ namespace TaskManager
                 Thread.Sleep(3000);
             };
 
-            // СОЗДАЁМ ПАПКУ ДЛЯ СЕССИИ
             string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
             _sessionFolder = Path.Combine(Directory.GetCurrentDirectory(), $"Logs_{timestamp}");
             Directory.CreateDirectory(_sessionFolder);
 
-            // ПЕРЕХВАТ КОНСОЛЬНОГО ВЫВОДА
             _consoleLogPath = Path.Combine(_sessionFolder, "console_output.txt");
             var consoleWriter = new StreamWriter(_consoleLogPath, false) { AutoFlush = true };
             Console.SetOut(new TeeWriter(Console.Out, consoleWriter));
@@ -44,18 +41,16 @@ namespace TaskManager
             Console.WriteLine($"=== СЕССИЯ ЗАПУЩЕНА: {DateTime.Now} ===");
             Console.WriteLine($"Папка логов: {_sessionFolder}\n");
 
-            // НАСТРОЙКА STRUCTURED LOGGING (SERILOG) - ИСПРАВЛЕННАЯ ВЕРСИЯ
             string jsonLogPath = Path.Combine(_sessionFolder, "structured_logs.json");
             string textLogPath = Path.Combine(_sessionFolder, "structured_logs.txt");
 
-            // ВАРИАНТ 1: Через JsonFormatter (если установлен пакет)
             var jsonFormatter = new JsonFormatter();
 
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug()
                 .WriteTo.Console(outputTemplate:
                     "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Properties}")
-                .WriteTo.File(jsonFormatter, jsonLogPath,  // Форматтер ПЕРВЫМ аргументом
+                .WriteTo.File(jsonFormatter, jsonLogPath,
                     rollingInterval: RollingInterval.Infinite)
                 .WriteTo.File(textLogPath,
                     rollingInterval: RollingInterval.Infinite,
@@ -143,21 +138,30 @@ namespace TaskManager
             try
             {
                 Trace.Listeners.Clear();
-                Trace.Listeners.Add(new ConsoleTraceListener());
 
-                var infoLogFile = new TextWriterTraceListener(Path.Combine(_sessionFolder, "taskmanager-info.log"));
-                infoLogFile.Filter = new EventTypeFilter(SourceLevels.Information);
-                Trace.Listeners.Add(infoLogFile);
+                ConsoleTraceListener consoleListener = new ConsoleTraceListener();
+                consoleListener.Filter = new EventTypeFilter(SourceLevels.All);
+                Trace.Listeners.Add(consoleListener);
 
-                var errorLogFile = new TextWriterTraceListener(Path.Combine(_sessionFolder, "taskmanager-error.log"));
-                errorLogFile.Filter = new EventTypeFilter(SourceLevels.Warning);
-                Trace.Listeners.Add(errorLogFile);
+                TextWriterTraceListener infoListener = new TextWriterTraceListener(Path.Combine(_sessionFolder, "taskmanager-info.log"));
+                infoListener.Filter = new EventTypeFilter(SourceLevels.Information);
+                Trace.Listeners.Add(infoListener);
 
-                var traceLogFile = new TextWriterTraceListener(Path.Combine(_sessionFolder, "taskmanager-trace.log"));
-                traceLogFile.Filter = new EventTypeFilter(SourceLevels.All);
-                Trace.Listeners.Add(traceLogFile);
+                TextWriterTraceListener errorListener = new TextWriterTraceListener(Path.Combine(_sessionFolder, "taskmanager-error.log"));
+                errorListener.Filter = new EventTypeFilter(SourceLevels.Error);
+                Trace.Listeners.Add(errorListener);
+
+                TextWriterTraceListener warningListener = new TextWriterTraceListener(Path.Combine(_sessionFolder, "taskmanager-warning.log"));
+                warningListener.Filter = new EventTypeFilter(SourceLevels.Warning);
+                Trace.Listeners.Add(warningListener);
+
+                TextWriterTraceListener traceListener = new TextWriterTraceListener(Path.Combine(_sessionFolder, "taskmanager-trace.log"));
+                traceListener.Filter = new EventTypeFilter(SourceLevels.Verbose);
+                Trace.Listeners.Add(traceListener);
 
                 Trace.AutoFlush = true;
+
+                Trace.TraceInformation("Логирование настроено");
             }
             catch (Exception ex)
             {

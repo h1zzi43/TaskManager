@@ -5,40 +5,26 @@ using Serilog;
 
 namespace TaskManager
 {
-    /// <summary>
-    /// Централизованный обработчик исключений
-    /// </summary>
     public static class ExceptionHandler
     {
-        // Событие для оповещений (можно подписаться из Program.cs)
         public static event Action<Exception, string> OnExceptionCaught;
 
         static ExceptionHandler()
         {
-            // Инициализация обработчика
             Log.Debug("ExceptionHandler инициализирован");
         }
 
-        /// <summary>
-        /// Обработка исключения с контекстом
-        /// </summary>
-        /// <param name="ex">Исключение</param>
-        /// <param name="operation">Операция, во время которой возникла ошибка</param>
-        /// <param name="contextData">Дополнительные данные контекста</param>
-        /// <param name="level">Уровень ошибки</param>
         public static void HandleException(
             Exception ex,
             string operation,
             object contextData = null,
             LogLevel level = LogLevel.Error)
         {
-            // Получаем информацию о вызове
             var stackTrace = new StackTrace(true);
             var callerFrame = stackTrace.GetFrame(1);
             var callerMethod = callerFrame?.GetMethod()?.Name ?? "Unknown";
             var callerClass = callerFrame?.GetMethod()?.DeclaringType?.Name ?? "Unknown";
 
-            // Формируем детальную информацию об ошибке
             var errorInfo = new
             {
                 Exception = new
@@ -66,42 +52,34 @@ namespace TaskManager
                 ThreadId = Environment.CurrentManagedThreadId
             };
 
-            // Логирование в зависимости от уровня
             switch (level)
             {
                 case LogLevel.Fatal:
                     Log.Fatal(ex, "[FATAL] Ошибка в операции {Operation}: {ErrorMessage}. Контекст: {@Context}",
                         operation, ex.Message, errorInfo);
-                    Trace.TraceError($"[FATAL] {operation} | {ex.Message} | {ex.StackTrace}");
+                    Trace.TraceError($"[FATAL] {operation} | {ex.Message}");
+                    Trace.TraceError($"StackTrace: {ex.StackTrace}");
                     break;
 
                 case LogLevel.Error:
                     Log.Error(ex, "[ERROR] Ошибка в операции {Operation}: {ErrorMessage}. Контекст: {@Context}",
                         operation, ex.Message, errorInfo);
                     Trace.TraceError($"[ERROR] {operation} | {ex.Message}");
-                    Trace.WriteLine($"[TRACE] StackTrace: {ex.StackTrace}");
+                    Trace.TraceError($"StackTrace: {ex.StackTrace}");
                     break;
 
                 case LogLevel.Warning:
                     Log.Warning(ex, "[WARNING] Ошибка в операции {Operation}: {ErrorMessage}",
                         operation, ex.Message);
-                    Trace.TraceWarning($"[WARN] {operation} | {ex.Message}");
+                    Trace.TraceWarning($"[WARNING] {operation} | {ex.Message}");
                     break;
             }
 
-            // Запись в отдельный файл ошибок
             WriteToErrorLog(errorInfo, level);
-
-            // Оповещение пользователя
             NotifyUser(ex, operation, level);
-
-            // Вызов события для дополнительных обработчиков (Sentry, Email и т.д.)
             OnExceptionCaught?.Invoke(ex, operation);
         }
 
-        /// <summary>
-        /// Запись ошибки в отдельный файл
-        /// </summary>
         private static void WriteToErrorLog(object errorInfo, LogLevel level)
         {
             try
@@ -112,17 +90,12 @@ namespace TaskManager
             }
             catch (Exception ex)
             {
-                // Не логируем ошибку логирования, чтобы избежать рекурсии
                 Debug.WriteLine($"Failed to write error log: {ex.Message}");
             }
         }
 
-        /// <summary>
-        /// Оповещение пользователя
-        /// </summary>
         private static void NotifyUser(Exception ex, string operation, LogLevel level)
         {
-            // Цветовое выделение в консоли
             var originalColor = Console.ForegroundColor;
 
             if (level == LogLevel.Fatal || level == LogLevel.Error)
@@ -138,7 +111,6 @@ namespace TaskManager
                 }
                 Console.ForegroundColor = originalColor;
 
-                // Звуковое оповещение (опционально)
                 if (level == LogLevel.Fatal)
                 {
                     Console.Beep();
@@ -154,9 +126,6 @@ namespace TaskManager
             }
         }
 
-        /// <summary>
-        /// Попытка выполнить действие с автоматической обработкой ошибок
-        /// </summary>
         public static bool TryExecute(Action action, string operation, object context = null, LogLevel level = LogLevel.Error)
         {
             try
@@ -171,9 +140,6 @@ namespace TaskManager
             }
         }
 
-        /// <summary>
-        /// Попытка выполнить действие с возвратом результата
-        /// </summary>
         public static T TryExecute<T>(Func<T> func, string operation, object context = null, LogLevel level = LogLevel.Error, T defaultValue = default(T))
         {
             try
@@ -188,9 +154,6 @@ namespace TaskManager
         }
     }
 
-    /// <summary>
-    /// Уровни логирования ошибок
-    /// </summary>
     public enum LogLevel
     {
         Warning,
