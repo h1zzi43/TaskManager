@@ -1,4 +1,5 @@
 ﻿using Serilog;
+using Serilog.Formatting.Json; // Добавляем этот using
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -14,12 +15,27 @@ namespace TaskManager
 
         static void Main(string[] args)
         {
+            // === ГЛОБАЛЬНЫЙ ОБРАБОТЧИК НЕОБРАБОТАННЫХ ИСКЛЮЧЕНИЙ ===
+            AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
+            {
+                var ex = e.ExceptionObject as Exception;
+                if (ex != null)
+                {
+                    ExceptionHandler.HandleException(ex, "UnhandledException",
+                        new { IsTerminating = e.IsTerminating }, LogLevel.Fatal);
+                }
+
+                Console.WriteLine("\n!!! КРИТИЧЕСКАЯ ОШИБКА !!!");
+                Console.WriteLine("Приложение будет закрыто.");
+                Thread.Sleep(3000);
+            };
+
             // СОЗДАЁМ ПАПКУ ДЛЯ СЕССИИ
             string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
             _sessionFolder = Path.Combine(Directory.GetCurrentDirectory(), $"Logs_{timestamp}");
             Directory.CreateDirectory(_sessionFolder);
 
-            // ПЕРЕХВАТ КОНСОЛЬНОГО ВЫВОДА В ФАЙЛ
+            // ПЕРЕХВАТ КОНСОЛЬНОГО ВЫВОДА
             _consoleLogPath = Path.Combine(_sessionFolder, "console_output.txt");
             var consoleWriter = new StreamWriter(_consoleLogPath, false) { AutoFlush = true };
             Console.SetOut(new TeeWriter(Console.Out, consoleWriter));
@@ -28,42 +44,39 @@ namespace TaskManager
             Console.WriteLine($"=== СЕССИЯ ЗАПУЩЕНА: {DateTime.Now} ===");
             Console.WriteLine($"Папка логов: {_sessionFolder}\n");
 
-            // НАСТРОЙКА STRUCTURED LOGGING (SERILOG)
+            // НАСТРОЙКА STRUCTURED LOGGING (SERILOG) - ИСПРАВЛЕННАЯ ВЕРСИЯ
             string jsonLogPath = Path.Combine(_sessionFolder, "structured_logs.json");
             string textLogPath = Path.Combine(_sessionFolder, "structured_logs.txt");
+
+            // ВАРИАНТ 1: Через JsonFormatter (если установлен пакет)
+            var jsonFormatter = new JsonFormatter();
 
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug()
                 .WriteTo.Console(outputTemplate:
                     "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Properties}")
-                .WriteTo.File(
-                    path: jsonLogPath,
-                    rollingInterval: RollingInterval.Infinite,
-                    formatter: new Serilog.Formatting.Json.JsonFormatter())
-                .WriteTo.File(
-                    path: textLogPath,
+                .WriteTo.File(jsonFormatter, jsonLogPath,  // Форматтер ПЕРВЫМ аргументом
+                    rollingInterval: RollingInterval.Infinite)
+                .WriteTo.File(textLogPath,
                     rollingInterval: RollingInterval.Infinite,
                     outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
                 .CreateLogger();
 
             Log.Information("Приложение TaskManager запущено. Сессия: {SessionFolder}", _sessionFolder);
 
-            // НАСТРОЙКА TRACE ЛОГИРОВАНИЯ В ПАПКУ СЕССИИ
             SetupLogging();
-
-            Trace.TraceInformation($"[INFO] Приложение TaskManager запущено. Сессия: {_sessionFolder}");
-            Trace.WriteLine($"[TRACE] Инициализация менеджера задач...");
 
             var taskManager = new TaskManagerService();
 
-            Console.WriteLine("=== TaskManager с СТРУКТУРИРОВАННЫМ логированием ===");
+            Console.WriteLine("=== TaskManager с ЦЕНТРАЛИЗОВАННОЙ ОБРАБОТКОЙ ОШИБОК ===");
             Console.WriteLine("Доступные команды:");
             Console.WriteLine("  add    - добавить задачу");
             Console.WriteLine("  remove - удалить задачу");
             Console.WriteLine("  list   - показать все задачи");
             Console.WriteLine("  help   - показать справку");
+            Console.WriteLine("  error  - симулировать ошибку (демонстрация)");
             Console.WriteLine("  exit   - выход из программы");
-            Console.WriteLine("================================================\n");
+            Console.WriteLine("====================================================\n");
 
             bool isRunning = true;
 
@@ -75,25 +88,27 @@ namespace TaskManager
                 switch (command)
                 {
                     case "add":
-                        Log.Debug("Пользователь выбрал команду Add");
-                        Trace.WriteLine("[TRACE] Обработка команды Add...");
                         Console.Write("Введите название задачи: ");
                         string title = Console.ReadLine()?.Trim();
                         taskManager.AddTask(title);
                         break;
 
                     case "remove":
-                        Log.Debug("Пользователь выбрал команду Remove");
-                        Trace.WriteLine("[TRACE] Обработка команды Remove...");
                         Console.Write("Введите название задачи для удаления: ");
                         string taskToRemove = Console.ReadLine()?.Trim();
                         taskManager.RemoveTask(taskToRemove);
                         break;
 
                     case "list":
-                        Log.Debug("Пользователь выбрал команду List");
-                        Trace.WriteLine("[TRACE] Обработка команды List...");
                         taskManager.ListTasks();
+                        break;
+
+                    case "error":
+                        Console.WriteLine("Демонстрация ошибки...");
+                        ExceptionHandler.TryExecute(() =>
+                        {
+                            throw new InvalidOperationException("Это тестовая ошибка для демонстрации работы обработчика!");
+                        }, "TestError", new { Demo = true }, LogLevel.Error);
                         break;
 
                     case "help":
@@ -101,15 +116,10 @@ namespace TaskManager
                         break;
 
                     case "exit":
-                        Log.Information("Пользователь завершил работу приложения");
-                        Trace.TraceInformation("[INFO] Завершение работы приложения...");
-                        Trace.WriteLine("[TRACE] Выполнение команды Exit...");
                         isRunning = false;
                         break;
 
                     default:
-                        Log.Warning("Введена неизвестная команда: {Command}", command);
-                        Trace.TraceWarning($"[WARN] Введена неизвестная команда: {command}");
                         Console.WriteLine("Неизвестная команда. Введите 'help' для справки.");
                         break;
                 }
@@ -118,26 +128,13 @@ namespace TaskManager
             }
 
             Log.Information("Приложение TaskManager завершено корректно");
-            Trace.TraceInformation("[INFO] Приложение TaskManager завершено корректно.");
-
             taskManager.Close();
-            Thread.Sleep(100);
-            Trace.Flush();
-            Log.CloseAndFlush();
 
-            // ЗАКРЫВАЕМ ПЕРЕХВАТ КОНСОЛИ
+            Log.CloseAndFlush();
             consoleWriter.Close();
 
-            Console.WriteLine($"\n✅ Приложение завершено. Все логи сохранены в папку:");
-            Console.WriteLine($"   {_sessionFolder}");
-            Console.WriteLine($"\n📁 Файлы в папке:");
-            Console.WriteLine($"   - structured_logs.json     (структурированные логи)");
-            Console.WriteLine($"   - structured_logs.txt      (текстовые логи)");
-            Console.WriteLine($"   - console_output.txt       (всё, что вы видели в консоли)");
-            Console.WriteLine($"   - taskmanager-info.log     (Trace Info)");
-            Console.WriteLine($"   - taskmanager-error.log    (Trace Errors)");
-            Console.WriteLine($"   - taskmanager-trace.log    (Trace All)");
-            Console.WriteLine("\nНажмите любую клавишу для выхода...");
+            Console.WriteLine($"\n✅ Приложение завершено. Логи сохранены в: {_sessionFolder}");
+            Console.WriteLine("Нажмите любую клавишу для выхода...");
             Console.ReadKey();
         }
 
@@ -146,10 +143,8 @@ namespace TaskManager
             try
             {
                 Trace.Listeners.Clear();
-
                 Trace.Listeners.Add(new ConsoleTraceListener());
 
-                // ЛОГИ ТЕПЕРЬ СОХРАНЯЮТСЯ В ПАПКУ СЕССИИ
                 var infoLogFile = new TextWriterTraceListener(Path.Combine(_sessionFolder, "taskmanager-info.log"));
                 infoLogFile.Filter = new EventTypeFilter(SourceLevels.Information);
                 Trace.Listeners.Add(infoLogFile);
@@ -166,9 +161,8 @@ namespace TaskManager
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Критическая ошибка настройки логирования: {ex.Message}");
+                Console.WriteLine($"Ошибка настройки логирования: {ex.Message}");
                 Log.Fatal(ex, "Ошибка настройки Trace логирования");
-                Trace.TraceError($"[ERROR] Ошибка настройки логирования: {ex.Message}");
             }
         }
 
@@ -176,19 +170,14 @@ namespace TaskManager
         {
             Console.WriteLine("\n=== Справка по командам ===");
             Console.WriteLine("add    - Добавить новую задачу");
-            Console.WriteLine("         После ввода команды будет запрошено название задачи");
-            Console.WriteLine("remove - Удалить существующую задачу");
-            Console.WriteLine("         После ввода команды будет запрошено название задачи для удаления");
-            Console.WriteLine("list   - Показать все текущие задачи");
-            Console.WriteLine("exit   - Завершить работу приложения");
+            Console.WriteLine("remove - Удалить задачу");
+            Console.WriteLine("list   - Показать все задачи");
+            Console.WriteLine("error  - Симулировать ошибку (тест)");
+            Console.WriteLine("exit   - Выход");
             Console.WriteLine("===========================\n");
-
-            Log.Information("Выведена справка по командам пользователю {User}", Environment.UserName);
-            Trace.TraceInformation("[INFO] Выведена справка по командам.");
         }
     }
 
-    // ВСПОМОГАТЕЛЬНЫЙ КЛАСС ДЛЯ ДУБЛИРОВАНИЯ КОНСОЛЬНОГО ВЫВОДА
     public class TeeWriter : TextWriter
     {
         private readonly TextWriter _original;
